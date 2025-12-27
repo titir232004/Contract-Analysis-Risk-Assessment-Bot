@@ -2,4 +2,10 @@ streamlit
 spacy
 nltk
 pdfplumber
-python-docx
+pandas>=2.0.0
+matplotlib>=3.7.0
+plotly>=5.17.0
+openai>=1.0.0
+python-dotenv>=1.0.0
+PyPDF2>=3.0.0
+python-docx>=0.8.11
