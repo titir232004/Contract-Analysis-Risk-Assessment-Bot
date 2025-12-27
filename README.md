@@ -70,16 +70,14 @@ Copy code
 git clone https://github.com/your-username/NYAYA_SAHAYAK_CONTRACT_ANALYSIS.git
 cd NYAYA_SAHAYAK_CONTRACT_ANALYSIS
 2️⃣ Install dependencies
-bash
-Copy code
 pip install -r requirements.txt
+
 3️⃣ Launch the Streamlit Dashboard
-bash
-Copy code
 streamlit run app.py
+
 4️⃣ Upload a Contract
 Supported formats: PDF, DOCX, TXT
 
 View clause analysis, risks, and safer alternatives
-
+```
 
