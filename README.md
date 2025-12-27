@@ -16,7 +16,8 @@ NYAYA_SAHAYAK_CONTRACT_ANALYSIS
 │ └── cleaning.py # Cleans and normalizes contract text
 ├── analysis/
 │ ├── clause_explainer.py # AI agent to explain clauses and detect risks
-│ │── report_generator.py # Formats analysis into JSON and Markdown 
+│ │── report_generator.py # Formats analysis into JSON and Markdown
+│ │── risk_scorer.py # Calculates overall safety score based on weighted clause risks
 │ └── summarizer_agent.py # Summarizes contract and calculates risk score
 ├── requirements.txt # Python dependencies
 └── README.md # Project documentation
