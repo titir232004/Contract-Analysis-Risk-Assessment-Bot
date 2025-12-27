@@ -10,3 +10,4 @@ scikit-learn
 spacy
 torch
 transformers
+bs4
