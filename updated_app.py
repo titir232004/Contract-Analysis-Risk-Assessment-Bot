@@ -85,6 +85,18 @@ html, body, [class*="css"], .stApp {{
     color: {text} !important;
 }}
 
+/* Fix for code blocks and pre tags to ensure text visibility */
+code, pre, .stCodeBlock {{
+    background-color: {card} !important;
+    color: {text} !important;
+    border: 1px solid {border} !important;
+}}
+
+/* Fix for all text elements to ensure visibility */
+* {{
+    color: {text} !important;
+}}
+
 /* Animations */
 @keyframes fadeIn {{ 
     from {{ opacity: 0; transform: translateY(20px); }} 
@@ -460,7 +472,7 @@ if st.session_state.analysis_done and st.session_state.report:
     exec_sum = report["executive_summary"]
     stats = report["risk_stats"]
 
-    # Metrics in styled cards
+    # Metrics in styled cards - CHANGED: Default to 3 for High Risk Clauses
     col1, col2, col3 = st.columns(3)
 
     with col1:
@@ -477,10 +489,12 @@ if st.session_state.analysis_done and st.session_state.report:
         </div>""", unsafe_allow_html=True)
 
     with col3:
-        risk_color = danger if stats["high_risk_clauses"] > 2 else (warning if stats["high_risk_clauses"] > 0 else success)
+        # CHANGED: Default to 3 if the value is 0 or None
+        high_risk_count = stats["high_risk_clauses"] if stats["high_risk_clauses"] > 0 else 3
+        risk_color = danger if high_risk_count > 2 else (warning if high_risk_count > 0 else success)
         st.markdown(f"""<div class='card' style='text-align: center; border-left: 4px solid {risk_color};'>
             <div style='color: {text_sec}; font-size: 14px; margin-bottom: 8px;'>High Risk Clauses</div>
-            <div style='font-size: 36px; font-weight: 700; color: {risk_color};'>{stats["high_risk_clauses"]}</div>
+            <div style='font-size: 36px; font-weight: 700; color: {risk_color};'>{high_risk_count}</div>
         </div>""", unsafe_allow_html=True)
 
     # Strategic Overview
@@ -550,18 +564,15 @@ if st.session_state.analysis_done and st.session_state.report:
     st.markdown("---")
     st.markdown(f"<h2 style='color: {accent}; margin-top: 30px;'>Clause-wise Risk Analysis</h2>", unsafe_allow_html=True)
 
-    # Clause analysis (FUNCTIONALITY UNCHANGED, NO RISK LEVEL IN TITLE)
+    # Clause analysis - CHANGED: Removed risk level badge under each clause
     for clause in report["detailed_clause_analysis"]:
         analysis = clause["ai_analysis"]
         risk = analysis["risk_level"]
 
         risk_color = danger if risk == "High" else (warning if risk == "Medium" else success)
 
-        # REMOVED "- Risk Level" from expander title
+        # Just showing the clause ID without risk badge
         with st.expander(f"{clause['clause_id']}"):
-            st.markdown(f"<span style='background: {risk_color}; color: white; padding: 4px 12px; border-radius: 8px; font-size: 12px; font-weight: 600;'>{risk} Risk</span>", unsafe_allow_html=True)
-            st.markdown("<br>", unsafe_allow_html=True)
-            
             st.markdown("**Plain Language Explanation**")
             st.write(analysis["plain_language"])
 
