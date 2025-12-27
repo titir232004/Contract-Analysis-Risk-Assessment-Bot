@@ -11,3 +11,4 @@ spacy
 torch
 transformers
 bs4
+openai
