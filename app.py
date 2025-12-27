@@ -7,32 +7,61 @@ import time
 from datetime import datetime
 from io import BytesIO
 
-from preprocessing import preprocess_contract
-from clause_explainer import explain_clause_gpt
-from risk_scorer import RiskScorer
-from summarizer_agent import summarize_contract
-from report_generator import ReportGenerator
+# Import from preprocessing folder
+from preprocessing.file_loader import extract_text
+from preprocessing.cleaning import clean_text
+from preprocessing.clause_splitter import split_into_clauses
+
+# Import from analysis folder
+from analysis.clause_explainer import explain_clause_gpt
+from analysis.summarizer_agent import summarize_contract
+from analysis.risk_scorer import RiskScorer
+from analysis.report_generator import ReportGenerator
 
 # ================= PAGE CONFIG =================
 st.set_page_config(page_title="ContractShield AI", layout="wide", page_icon="⚖️")
 
 # ================= SESSION STATE =================
 for key, default in [("clauses", None), ("analysis", None), ("history", []), ("theme", "light"), 
-                     ("chat", []), ("chat_open", False), ("overall_score", None), 
-                     ("executive_summary", None), ("full_report", None), ("uploaded_filename", None)]:
+                     ("chat", []), ("chat_open", False), ("overall_score", None), ("risk_category", None),
+                     ("summary_data", None), ("full_report", None)]:
     if key not in st.session_state:
         st.session_state[key] = default
 
 # ================= HELPER FUNCTIONS =================
-def analyze_contract_with_gpt(clauses, filename="contract.pdf"):
-    """Analyze contract using GPT-based clause explainer + summarizer"""
-    results = []
-    all_risks = []
-    analyzed_clauses_for_summary = []
+def preprocess_contract(uploaded_file):
+    """Complete preprocessing pipeline"""
+    # Step 1: Extract text from file
+    raw_text = extract_text(uploaded_file)
     
+    # Step 2: Clean the text
+    cleaned_text = clean_text(raw_text)
+    
+    # Step 3: Split into clauses
+    clauses = split_into_clauses(cleaned_text)
+    
+    return clauses
+
+def analyze_contract_with_gpt(clauses):
+    """Analyze contract using GPT-based clause explainer and summarizer"""
+    results = []
+    analyzed_clauses = []
+    all_risks = []
+    
+    # Step 1: Analyze each clause individually
     for idx, clause in enumerate(clauses):
-        # Get GPT analysis for each clause
+        # Get GPT analysis for this clause
         gpt_result = explain_clause_gpt(clause['text'])
+        
+        # Store analyzed clause data for summarizer
+        analyzed_clauses.append({
+            'clause_id': idx + 1,
+            'risk_level': gpt_result.get('risk_level', 'Unknown'),
+            'risks_detected': gpt_result.get('risks_detected', []),
+            'plain_language': gpt_result.get('plain_language', ''),
+            'key_points': gpt_result.get('key_points', []),
+            'safer_alternative': gpt_result.get('safer_alternative', '')
+        })
         
         # Map risk level to scoring weight
         risk_weights = {"High": 15, "Medium": 8, "Low": 3, "Unknown": 5}
@@ -46,79 +75,71 @@ def analyze_contract_with_gpt(clauses, filename="contract.pdf"):
             'weight': weight
         })
         
-        # Store for summarizer
-        analyzed_clauses_for_summary.append(gpt_result)
-        
         # Format result for display
         result = {
             'clause_id': idx + 1,
-            'title': f"Clause {idx + 1}",
             'text': clause['text'],
-            'content': clause['text'],
             'risk_level': risk_level,
             'explanation': gpt_result.get('plain_language', 'No explanation available'),
             'key_points': gpt_result.get('key_points', []),
             'risks': '\n'.join(gpt_result.get('risks_detected', ['No risks detected'])),
-            'risks_detected': gpt_result.get('risks_detected', []),
             'suggested_alternative': gpt_result.get('safer_alternative', 'No alternative suggested'),
-            'ai_data': gpt_result  # Store full GPT result for report generation
+            'ai_data': gpt_result  # Store full AI response
         }
         results.append(result)
     
-    # Calculate overall risk score
+    # Step 2: Calculate overall risk score
     scorer = RiskScorer()
     overall_score = scorer.calculate_score(all_risks)
     risk_category = scorer.get_risk_level(overall_score)
     
-    # Generate executive summary using summarizer agent
-    summary_result = summarize_contract(analyzed_clauses_for_summary)
+    # Step 3: Generate executive summary using summarizer agent
+    summary_data = summarize_contract(analyzed_clauses)
     
-    # Create comprehensive report using report generator
-    report_gen = ReportGenerator()
+    # Add safety score to summary data for report generator
+    summary_data['safety_score'] = overall_score
+    summary_data['final_verdict'] = summary_data.get('recommendation', 'Review Required')
+    summary_data['compliance_check'] = f"Risk Level: {summary_data.get('overall_risk_score', 'Unknown')}"
+    summary_data['key_obligations'] = [
+        f"Review {sum(1 for r in results if r['risk_level'] == 'High')} high-risk clauses",
+        f"Consider negotiating {sum(1 for r in results if r['risk_level'] == 'Medium')} medium-risk terms",
+        "Consult legal counsel before signing" if overall_score < 70 else "Standard review recommended"
+    ]
     
-    # Prepare summary data for report
-    summary_data = {
-        "executive_summary": summary_result.get('executive_summary', 'Analysis complete'),
-        "final_verdict": summary_result.get('recommendation', 'Review Required'),
-        "compliance_check": f"Overall Risk: {summary_result.get('overall_risk_score', 'Unknown')}",
-        "key_obligations": _extract_key_obligations(results),
-        "safety_score": overall_score
+    return results, overall_score, risk_category, summary_data
+
+def generate_full_report(filename, clauses_data, analysis_results, summary_data):
+    """Generate complete structured report"""
+    # Prepare data structures for report generator
+    clauses_for_report = []
+    for result in analysis_results:
+        clause_data = {
+            'title': f"Clause {result['clause_id']}",
+            'content': result['text'],
+            'ai_data': result['ai_data']
+        }
+        clauses_for_report.append(clause_data)
+    
+    # Extract entities (simplified - you can enhance this)
+    entities = {
+        'parties': [],
+        'dates': [],
+        'amounts': []
     }
     
-    # Generate full report
+    # Generate report using ReportGenerator
+    report_gen = ReportGenerator()
     full_report = report_gen.generate_analysis_report(
         filename=filename,
         summary_data=summary_data,
-        clauses=results,
-        entities=[]  # You can add entity extraction here if needed
+        clauses=clauses_for_report,
+        entities=entities
     )
     
-    executive_summary = {
-        'summary': summary_result.get('executive_summary', ''),
-        'overall_risk': summary_result.get('overall_risk_score', 'Unknown'),
-        'recommendation': summary_result.get('recommendation', 'Review Required'),
-        'high_risk_count': sum(1 for r in results if r['risk_level'] == 'High'),
-        'medium_risk_count': sum(1 for r in results if r['risk_level'] == 'Medium')
-    }
-    
-    return results, overall_score, risk_category, executive_summary, full_report
+    return full_report
 
-def _extract_key_obligations(results):
-    """Extract key obligations from analyzed clauses"""
-    obligations = []
-    for r in results:
-        if r['risk_level'] in ['High', 'Medium']:
-            key_points = r.get('key_points', [])
-            if key_points:
-                obligations.extend(key_points[:2])  # Take top 2 points from risky clauses
-    return obligations[:5]  # Return top 5 obligations
 def generate_summary_text():
-    """Generate text summary for download using ReportGenerator"""
-    if st.session_state.full_report:
-        report_gen = ReportGenerator()
-        return report_gen.export_to_markdown(st.session_state.full_report)
-    
-    # Fallback to simple format if report not available
+    """Generate text summary for download"""
     high = sum(1 for r in st.session_state.analysis if r["risk_level"] == "High")
     medium = sum(1 for r in st.session_state.analysis if r["risk_level"] == "Medium")
     low = sum(1 for r in st.session_state.analysis if r["risk_level"] == "Low")
@@ -136,6 +157,21 @@ High Risk Clauses: {high}
 Medium Risk Clauses: {medium}
 Low Risk Clauses: {low}
 
+"""
+    
+    # Add AI-generated executive summary if available
+    if st.session_state.summary_data:
+        summary += f"""
+AI EXECUTIVE SUMMARY
+{'-'*60}
+{st.session_state.summary_data.get('executive_summary', 'N/A')}
+
+Overall Assessment: {st.session_state.summary_data.get('overall_risk_score', 'N/A')}
+Recommendation: {st.session_state.summary_data.get('recommendation', 'N/A')}
+
+"""
+    
+    summary += f"""
 DETAILED CLAUSE ANALYSIS
 {'='*60}
 
@@ -177,6 +213,20 @@ def generate_csv_report():
         'Suggested Alternative': r['suggested_alternative']
     } for r in st.session_state.analysis]
     return pd.DataFrame(data).to_csv(index=False, escapechar='\\', quoting=1).encode('utf-8')
+
+def generate_markdown_report():
+    """Generate Markdown report using ReportGenerator"""
+    if st.session_state.full_report:
+        report_gen = ReportGenerator()
+        return report_gen.export_to_markdown(st.session_state.full_report)
+    return "No report available"
+
+def generate_json_report():
+    """Generate JSON report using ReportGenerator"""
+    if st.session_state.full_report:
+        report_gen = ReportGenerator()
+        return report_gen.export_to_json(st.session_state.full_report)
+    return "{}"
 
 def show_success_animation():
     """Custom success animation"""
@@ -376,7 +426,7 @@ with st.sidebar:
         with col2:
             if st.button("Reports", key="q3", use_container_width=True):
                 st.session_state.chat.append(("user", "How do I download reports?"))
-                st.session_state.chat.append(("bot", "After running your analysis, navigate to the Summary page using the sidebar. You'll find two download options: TXT format (detailed narrative report) and CSV format (spreadsheet with all data). Both contain complete clause analysis, risk assessments, and recommendations."))
+                st.session_state.chat.append(("bot", "After running your analysis, navigate to the Summary page using the sidebar. You'll find multiple download options: TXT format (detailed narrative report), CSV format (spreadsheet), JSON (structured data), and Markdown (formatted document). All contain complete clause analysis, risk assessments, and recommendations."))
                 st.rerun()
             if st.button("Guide", key="q4", use_container_width=True):
                 st.session_state.chat.append(("user", "How do I use this app?"))
@@ -410,63 +460,15 @@ with st.sidebar:
             elif any(word in user_lower for word in ["risk", "high", "medium", "low", "danger", "level"]):
                 reply = "Risk Level Classification:\n\n🔴 HIGH RISK\nCritical issues that could significantly harm your interests, such as:\n- Unlimited liability clauses\n- Severe penalty terms\n- Unfair termination rights\n- Intellectual property losses\n→ Requires immediate legal review\n\n🟡 MEDIUM RISK\nNotable concerns that should be considered:\n- Ambiguous terms\n- One-sided obligations\n- Unclear payment terms\n→ Should be negotiated\n\n🟢 LOW RISK\nMinor issues or standard terms:\n- Common boilerplate clauses\n- Fair and balanced terms\n→ Generally acceptable"
             
-            # Preprocessing questions
-            elif any(word in user_lower for word in ["preprocess", "extract", "clause", "split", "segment"]):
-                reply = "Preprocessing is the first analysis stage where I:\n\n1. Extract text from your document (PDF/DOCX/TXT)\n2. Identify clause boundaries using AI\n3. Segment the contract into individual clauses\n4. Calculate statistics (word count, clause distribution)\n5. Prepare data for risk analysis\n\nThis allows precise, clause-by-clause analysis rather than reviewing the entire document as one block. You can view extraction statistics on the Preprocessing page!"
-            
-            # Download/Export questions
-            elif any(word in user_lower for word in ["download", "export", "report", "save", "print"]):
-                reply = "Report Download Options:\n\n📄 TXT Report\n- Comprehensive narrative format\n- Includes all clause details\n- Explanations and recommendations\n- Easy to read and share\n\n📊 CSV Report\n- Spreadsheet format\n- Structured data columns\n- Perfect for Excel analysis\n- Sortable and filterable\n\nBoth reports contain: Clause ID, Risk Level, Original Text, Explanation, Identified Risks, and Suggested Alternatives. Available on Summary page after analysis!"
-            
-            # File format questions
-            elif any(word in user_lower for word in ["format", "file", "pdf", "docx", "txt", "upload", "size"]):
-                reply = "Supported File Formats:\n\n✓ PDF (.pdf) - Most common for contracts\n✓ DOCX (.docx) - Microsoft Word documents\n✓ TXT (.txt) - Plain text files\n\nRecommendations:\n- File size: Typically under 10MB works best\n- Quality: Clear, readable text (not scanned images)\n- Language: English contracts only\n- Structure: Properly formatted with clause breaks\n\nUpload from the Upload page in the sidebar!"
-            
-            # How to use / Tutorial
-            elif any(word in user_lower for word in ["how", "use", "start", "tutorial", "guide", "step", "begin"]):
-                if not has_clauses:
-                    reply = "📚 Complete Usage Guide:\n\nSTEP 1: Upload Contract\n- Navigate to 'Upload' page\n- Click 'Choose a file'\n- Select your contract (PDF/DOCX/TXT)\n- Wait for automatic extraction\n\nSTEP 2: Review Statistics (Optional)\n- Go to 'Preprocessing' page\n- View clause distribution\n- Check word count analysis\n\nSTEP 3: Run AI Analysis\n- Navigate to 'Risk Analysis'\n- Click 'Run Analysis' button\n- Wait for AI assessment (20-30 seconds)\n\nSTEP 4: Review Results\n- Check 'Clause Insights' for details\n- Filter by risk level\n- Read explanations and alternatives\n\nSTEP 5: Download Reports\n- Go to 'Summary' page\n- Download TXT or CSV report\n- Share with legal team if needed\n\n👉 Start now by uploading a contract!"
-                elif not has_analysis:
-                    reply = "✅ Great! Your contract is uploaded.\n\n📍 Next Step: Run Analysis\n\n1. Go to 'Risk Analysis' page (use sidebar)\n2. Click the 'Run Analysis' button\n3. Wait 20-30 seconds for AI processing\n4. Review results on 'Clause Insights'\n\nThe AI will assess each clause for:\n- Risk level (High/Medium/Low)\n- Potential issues\n- Plain-language explanations\n- Suggested alternatives\n\nReady to analyze?"
-                else:
-                    reply = "🎉 Your analysis is complete!\n\n📊 What you can do now:\n\n1. REVIEW DETAILS\n→ Go to 'Clause Insights'\n→ Filter by risk level\n→ Read each clause analysis\n\n2. VIEW SUMMARY\n→ Go to 'Summary' page\n→ See overall risk distribution\n→ Check recommendations\n\n3. DOWNLOAD REPORTS\n→ TXT format for detailed review\n→ CSV format for data analysis\n\n4. ANALYZE ANOTHER CONTRACT\n→ Go to 'Upload' page\n→ Upload a new document\n\nNeed help understanding any specific clause?"
-            
-            # Analysis questions
-            elif any(word in user_lower for word in ["analy", "assess", "check", "review", "ai", "algorithm"]):
-                if not has_clauses:
-                    reply = "🤖 AI Analysis Process:\n\nOur advanced AI engine:\n\n1. Reads each clause individually\n2. Identifies legal language patterns\n3. Detects unfavorable terms\n4. Assesses potential risks\n5. Compares against fair standards\n6. Generates plain-language explanations\n7. Suggests balanced alternatives\n\nThe analysis considers:\n- Liability limitations\n- Termination rights\n- Payment terms\n- Intellectual property\n- Confidentiality obligations\n- Dispute resolution\n- Force majeure clauses\n\n📤 To begin: Upload your contract on the Upload page!"
-                elif not has_analysis:
-                    reply = f"📂 Contract Ready for Analysis!\n\nYour document has {len(st.session_state.clauses)} extracted clauses.\n\n🚀 Next: Run Analysis\n\nGo to 'Risk Analysis' page and click 'Run Analysis'. The AI will:\n\n✓ Evaluate each clause\n✓ Identify risks\n✓ Provide explanations\n✓ Suggest improvements\n\nEstimated time: 20-30 seconds\n\nReady to proceed?"
-                else:
-                    high_count = sum(1 for r in st.session_state.analysis if r["risk_level"] == "High")
-                    medium_count = sum(1 for r in st.session_state.analysis if r["risk_level"] == "Medium")
-                    low_count = sum(1 for r in st.session_state.analysis if r["risk_level"] == "Low")
-                    reply = f"✅ Analysis Complete!\n\n📊 Results Summary:\n\n🔴 High Risk: {high_count} clauses\n🟡 Medium Risk: {medium_count} clauses\n🟢 Low Risk: {low_count} clauses\n\nTotal Clauses: {len(st.session_state.analysis)}\n\n{'⚠️ Recommendation: Legal review strongly advised' if high_count > 0 else '✓ Contract appears acceptable'}\n\n📍 Next Steps:\n- Review 'Clause Insights' for details\n- Download reports from 'Summary'\n- Consult legal professional if needed"
-            
-            # Specific clause questions
-            elif any(word in user_lower for word in ["clause", "term", "provision", "section"]):
-                if has_analysis:
-                    reply = f"Your contract has {len(st.session_state.analysis)} analyzed clauses.\n\n🔍 To review specific clauses:\n\n1. Go to 'Clause Insights' page\n2. Use the risk filter dropdown\n3. Expand any clause to see:\n   - Original clause text\n   - Risk assessment\n   - Detailed explanation\n   - Identified concerns\n   - Suggested alternatives\n\nYou can filter by:\n- All clauses\n- High risk only\n- Medium risk only\n- Low risk only\n\nWhich clauses would you like to focus on?"
-                else:
-                    reply = "Clauses are individual provisions or sections in your contract. Each clause covers specific terms like:\n\n- Payment obligations\n- Delivery terms\n- Warranties\n- Liability limitations\n- Termination rights\n- Confidentiality\n- Dispute resolution\n\nI analyze each clause separately to identify risks and provide targeted recommendations. Upload a contract to see clause-by-clause analysis!"
-            
-            # Legal/lawyer questions
-            elif any(word in user_lower for word in ["legal", "lawyer", "attorney", "advice", "professional"]):
-                reply = "⚖️ Important Notice:\n\nI provide AI-powered contract analysis to help you understand risks, but:\n\n❗ I am NOT a substitute for legal advice\n❗ Always consult a qualified attorney for:\n   - Legal interpretation\n   - Binding decisions\n   - Court proceedings\n   - Complex negotiations\n\n✓ I CAN help you:\n   - Identify potential risks\n   - Understand clause implications\n   - Prepare questions for your lawyer\n   - Save review time\n   - Make informed decisions\n\nFor high-risk clauses, professional legal review is strongly recommended!"
-            
-            # Help/General
-            elif any(word in user_lower for word in ["help", "what", "can you", "feature", "capability"]):
-                reply = "🤖 I'm your Contract Analysis Assistant!\n\nI can help you with:\n\n📄 CONTRACT ANALYSIS\n- Upload and extract clauses\n- AI risk assessment\n- Plain-language explanations\n- Alternative suggestions\n\n📊 FEATURES\n- Support PDF, DOCX, TXT formats\n- Multiple contract types\n- Clause-by-clause review\n- Risk level classification\n- Statistical insights\n- Export reports (TXT/CSV)\n\n💡 INFORMATION\n- How to use the platform\n- Understanding risk levels\n- Preprocessing details\n- Download instructions\n\n❓ Ask me anything about:\n- Contract types\n- Risk assessment\n- Platform features\n- Usage guidance\n\nWhat would you like to know?"
-            
             # Context-aware default
             else:
                 if not has_clauses:
-                    reply = "👋 Welcome! I'm your Contract Analysis Assistant.\n\nI can help you:\n\n✓ Analyze contract risks\n✓ Understand complex clauses\n✓ Get plain-language explanations\n✓ Navigate the platform\n\n🚀 To get started:\n1. Upload a contract (Upload page)\n2. Or ask me questions about:\n   - Supported file formats\n   - Risk levels\n   - How to use features\n   - Contract types\n\nWhat would you like to do?"
+                    reply = "👋 Welcome! I'm your Contract Analysis Assistant.\n\nI can help you:\n\n✓ Analyze contract risks\n✓ Understand complex clauses\n✓ Get plain-language explanations\n✓ Navigate the platform\n\n🚀 To get started:\n1. Upload a contract (Upload page)\n2. Or ask me questions about features\n\nWhat would you like to do?"
                 elif not has_analysis:
-                    reply = f"📂 Your contract is uploaded ({len(st.session_state.clauses)} clauses extracted)!\n\n🎯 Next Step: Run Analysis\n\nGo to 'Risk Analysis' page and click 'Run Analysis' to begin AI assessment.\n\n💬 Or ask me:\n- What will the analysis show?\n- How long does it take?\n- What are risk levels?\n- Any other questions!\n\nHow can I help you?"
+                    reply = f"📂 Your contract is uploaded ({len(st.session_state.clauses)} clauses extracted)!\n\n🎯 Next Step: Run Analysis\n\nGo to 'Risk Analysis' page and click 'Run Analysis' to begin AI assessment.\n\nHow can I help you?"
                 else:
                     high_count = sum(1 for r in st.session_state.analysis if r["risk_level"] == "High")
-                    reply = f"✅ Your contract analysis is complete!\n\n📊 Found {high_count} high-risk clauses out of {len(st.session_state.analysis)} total.\n\n💬 I can help you:\n- Understand specific clauses\n- Explain risk levels\n- Guide through results\n- Download reports\n- Analyze another contract\n\nWhat would you like to know?"
+                    reply = f"✅ Your contract analysis is complete!\n\n📊 Found {high_count} high-risk clauses out of {len(st.session_state.analysis)} total.\n\n💬 I can help you understand specific clauses or download reports.\n\nWhat would you like to know?"
             
             st.session_state.chat.append(("bot", reply))
             st.rerun()
@@ -488,7 +490,7 @@ if page == "Overview":
     features = [
         ("📄", "Multi-Contract Support", "Handle multiple contract types with ease"),
         ("🧠", "Plain Language Analysis", "Understand complex clauses instantly"),
-        ("⚠️", "Risk Detection", "Tailored analysis for SMEs")
+        ("⚠️", "Risk Detection", "AI-powered risk assessment")
     ]
     
     for col, (icon, title, desc) in zip(cols, features):
@@ -506,9 +508,9 @@ if page == "Overview":
         <ol style='color: {text}; line-height: 2;'>
             <li><strong>Upload:</strong> Submit your contract document (PDF, DOCX, or TXT)</li>
             <li><strong>Preprocessing:</strong> AI automatically extracts and segments clauses</li>
-            <li><strong>Analysis:</strong> Advanced algorithms assess risk levels for each clause</li>
+            <li><strong>Analysis:</strong> Advanced GPT algorithms assess risk levels for each clause</li>
             <li><strong>Review:</strong> Get plain-language explanations and recommendations</li>
-            <li><strong>Export:</strong> Download comprehensive reports for your records</li>
+            <li><strong>Export:</strong> Download comprehensive reports in multiple formats</li>
         </ol>
     </div>""", unsafe_allow_html=True)
 
@@ -519,30 +521,41 @@ elif page == "Upload":
     uploaded_file = st.file_uploader("Choose a file", type=["pdf", "docx", "txt"], help="Supported formats: PDF, DOCX, TXT")
     
     if uploaded_file:
-        st.session_state.uploaded_filename = uploaded_file.name
-        
-        with st.spinner("Extracting clauses from your document..."):
+        with st.spinner("Extracting and preprocessing clauses from your document..."):
             progress = st.progress(0)
-            for i in range(100):
-                time.sleep(0.01)
-                progress.progress(i + 1)
-            st.session_state.clauses = preprocess_contract(uploaded_file)
-            progress.empty()
-        
-        show_success_animation()
-        st.success(f"Successfully extracted {len(st.session_state.clauses)} clauses from your document")
-        
-        st.markdown(f"""<div class='card'>
-            <h4 style='color: {accent}; margin-bottom: 15px;'>Document Details</h4>
-            <div style='color: {text}; line-height: 1.8;'>
-                <p><strong>Filename:</strong> {uploaded_file.name}</p>
-                <p><strong>Size:</strong> {uploaded_file.size/1024:.2f} KB</p>
-                <p><strong>Extracted Clauses:</strong> {len(st.session_state.clauses)}</p>
-                <p><strong>Status:</strong> <span style='color: {success}; font-weight: 600;'>Ready for Analysis</span></p>
-            </div>
-        </div>""", unsafe_allow_html=True)
-        
-        st.info("Navigate to 'Preprocessing' to view clause statistics, or go directly to 'Risk Analysis' to begin assessment.")
+            
+            # Use the complete preprocessing pipeline
+            try:
+                st.session_state.clauses = preprocess_contract(uploaded_file)
+                
+                for i in range(100):
+                    time.sleep(0.01)
+                    progress.progress(i + 1)
+                
+                progress.empty()
+                
+                if st.session_state.clauses and len(st.session_state.clauses) > 0:
+                    show_success_animation()
+                    st.success(f"✅ Successfully extracted {len(st.session_state.clauses)} clauses from your document")
+                    
+                    st.markdown(f"""<div class='card'>
+                        <h4 style='color: {accent}; margin-bottom: 15px;'>Document Details</h4>
+                        <div style='color: {text}; line-height: 1.8;'>
+                            <p><strong>Filename:</strong> {uploaded_file.name}</p>
+                            <p><strong>Size:</strong> {uploaded_file.size/1024:.2f} KB</p>
+                            <p><strong>Extracted Clauses:</strong> {len(st.session_state.clauses)}</p>
+                            <p><strong>Status:</strong> <span style='color: {success}; font-weight: 600;'>Ready for Analysis</span></p>
+                        </div>
+                    </div>""", unsafe_allow_html=True)
+                    
+                    st.info("✨ Navigate to 'Preprocessing' to view clause statistics, or go directly to 'Risk Analysis' to begin assessment.")
+                else:
+                    st.error("⚠️ No clauses could be extracted from the document. Please check the file format and content.")
+                    
+            except Exception as e:
+                progress.empty()
+                st.error(f"❌ Error processing document: {str(e)}")
+                st.info("Please ensure your document is not corrupted and contains readable text.")
 
 elif page == "Preprocessing" and st.session_state.clauses:
     st.markdown(f"<div class='title fade-in'>Preprocessing Insights</div>", unsafe_allow_html=True)
@@ -580,53 +593,51 @@ elif page == "Risk Analysis" and st.session_state.clauses:
     st.markdown(f"<div class='title fade-in'>AI Risk Analysis</div>", unsafe_allow_html=True)
     st.markdown(f"<div class='subtitle'>Automated risk assessment powered by GPT AI</div>", unsafe_allow_html=True)
     
-    if st.button("Run Analysis", type="primary", use_container_width=True):
-        with st.spinner("Analyzing contract clauses with AI..."):
+    if st.button("🚀 Run Complete Analysis", type="primary", use_container_width=True):
+        with st.spinner("🔍 Analyzing contract clauses with advanced AI..."):
             progress = st.progress(0)
             
-            # Analyze with GPT + Summarizer + Report Generator
-            filename = st.session_state.uploaded_filename or "contract.pdf"
-            results, overall_score, risk_category, executive_summary, full_report = analyze_contract_with_gpt(
-                st.session_state.clauses, 
-                filename
-            )
-            
-            # Update progress
-            for i in range(100):
-                time.sleep(0.02)
-                progress.progress(i + 1)
-            
-            st.session_state.analysis = results
-            st.session_state.overall_score = overall_score
-            st.session_state.risk_category = risk_category
-            st.session_state.executive_summary = executive_summary
-            st.session_state.full_report = full_report
-            
-            st.session_state.history.append({
-                "Time": datetime.now().strftime("%d %b %Y %H:%M"),
-                "Clauses": len(st.session_state.analysis),
-                "High Risk": executive_summary['high_risk_count'],
-                "Overall Score": overall_score,
-                "Recommendation": executive_summary['recommendation']
-            })
-            progress.empty()
+            try:
+                # Run complete analysis pipeline
+                results, overall_score, risk_category, summary_data = analyze_contract_with_gpt(st.session_state.clauses)
+                
+                # Update progress
+                for i in range(100):
+                    time.sleep(0.02)
+                    progress.progress(i + 1)
+                
+                # Store results in session state
+                st.session_state.analysis = results
+                st.session_state.overall_score = overall_score
+                st.session_state.risk_category = risk_category
+                st.session_state.summary_data = summary_data
+                
+                # Generate full structured report
+                st.session_state.full_report = generate_full_report(
+                    filename="uploaded_contract",
+                    clauses_data=st.session_state.clauses,
+                    analysis_results=results,
+                    summary_data=summary_data
+                )
+                
+                # Add to history
+                st.session_state.history.append({
+                    "Time": datetime.now().strftime("%d %b %Y %H:%M"),
+                    "Clauses": len(st.session_state.analysis),
+                    "High Risk": sum(1 for r in st.session_state.analysis if r["risk_level"] == "High"),
+                    "Overall Score": overall_score
+                })
+                
+                progress.empty()
+                
+            except Exception as e:
+                progress.empty()
+                st.error(f"❌ Analysis failed: {str(e)}")
+                st.info("Please try again or contact support if the issue persists.")
+                st.stop()
         
         show_success_animation()
-        st.success("Analysis completed successfully")
-        
-        # Display Executive Summary from Summarizer Agent
-        if st.session_state.executive_summary:
-            exec_sum = st.session_state.executive_summary
-            verdict_color = danger if exec_sum['recommendation'] == 'Reject' else (warning if exec_sum['recommendation'] == 'Negotiate' else success)
-            
-            st.markdown(f"""<div class='card' style='border-left: 4px solid {verdict_color};'>
-                <h3 style='color: {accent}; margin-bottom: 15px;'>Executive Summary</h3>
-                <p style='color: {text}; line-height: 1.8; font-size: 15px;'>{exec_sum['summary']}</p>
-                <div style='margin-top: 20px; padding-top: 15px; border-top: 1px solid {border};'>
-                    <p style='color: {text};'><strong>Overall Risk Assessment:</strong> <span style='color: {verdict_color}; font-weight: 600;'>{exec_sum['overall_risk']}</span></p>
-                    <p style='color: {text};'><strong>Recommendation:</strong> <span style='color: {verdict_color}; font-weight: 600;'>{exec_sum['recommendation']}</span></p>
-                </div>
-            </div>""", unsafe_allow_html=True)
+        st.success("✅ Analysis completed successfully")
         
         # Display overall score prominently
         col1, col2, col3 = st.columns([1, 2, 1])
@@ -640,6 +651,16 @@ elif page == "Risk Analysis" and st.session_state.clauses:
             </div>""", unsafe_allow_html=True)
         
         st.markdown("<br>", unsafe_allow_html=True)
+        
+        # Display AI-generated executive summary
+        if summary_data:
+            st.markdown(f"""<div class='card'>
+                <h3 style='color: {accent}; margin-bottom: 15px;'>📋 AI Executive Summary</h3>
+                <p style='color: {text}; line-height: 1.8; margin-bottom: 15px;'>{summary_data.get('executive_summary', 'No summary available')}</p>
+                <hr style='border-color: {border}; margin: 20px 0;'>
+                <p style='color: {text};'><strong>Overall Risk Assessment:</strong> <span style='color: {warning};'>{summary_data.get('overall_risk_score', 'N/A')}</span></p>
+                <p style='color: {text};'><strong>Recommendation:</strong> <span style='font-weight: 600;'>{summary_data.get('recommendation', 'N/A')}</span></p>
+            </div>""", unsafe_allow_html=True)
         
         high = sum(1 for r in st.session_state.analysis if r["risk_level"] == "High")
         medium = sum(1 for r in st.session_state.analysis if r["risk_level"] == "Medium")
@@ -716,26 +737,26 @@ elif page == "Clause Insights" and st.session_state.analysis:
     
     for r in filtered:
         color = danger if r["risk_level"] == "High" else (warning if r["risk_level"] == "Medium" else success)
-        with st.expander(f"Clause {r['clause_id']} | {r['risk_level']} Risk"):
+        with st.expander(f"📄 Clause {r['clause_id']} | {r['risk_level']} Risk"):
             st.markdown(f"<span style='background: {color}; color: white; padding: 4px 12px; border-radius: 8px; font-size: 12px; font-weight: 600;'>{r['risk_level']} Risk</span>", unsafe_allow_html=True)
             st.markdown("<br>", unsafe_allow_html=True)
             
-            st.markdown("**Original Clause Text**")
+            st.markdown("**📋 Original Clause Text**")
             st.info(r["text"])
             
-            st.markdown("**Plain Language Explanation**")
+            st.markdown("**💡 Plain Language Explanation**")
             st.write(r["explanation"])
             
             # Display key points if available
             if r.get('key_points') and len(r['key_points']) > 0:
-                st.markdown("**Key Points**")
+                st.markdown("**🔑 Key Points**")
                 for point in r['key_points']:
                     st.markdown(f"• {point}")
             
-            st.markdown("**Risks Detected**")
+            st.markdown("**⚠️ Risks Detected**")
             st.warning(r["risks"])
             
-            st.markdown("**Safer Alternative**")
+            st.markdown("**✅ Safer Alternative**")
             st.success(r["suggested_alternative"])
 
 elif page == "Summary" and st.session_state.analysis:
@@ -746,40 +767,33 @@ elif page == "Summary" and st.session_state.analysis:
     medium = sum(1 for r in st.session_state.analysis if r["risk_level"] == "Medium")
     low = sum(1 for r in st.session_state.analysis if r["risk_level"] == "Low")
     
-    # Overall score display with executive summary
-    if st.session_state.overall_score and st.session_state.executive_summary:
-        exec_sum = st.session_state.executive_summary
+    # Overall score display
+    if st.session_state.overall_score:
         score_color = success if st.session_state.overall_score >= 85 else (warning if st.session_state.overall_score >= 60 else danger)
-        verdict_color = danger if exec_sum['recommendation'] == 'Reject' else (warning if exec_sum['recommendation'] == 'Negotiate' else success)
-        
-        col1, col2 = st.columns([1, 1])
-        with col1:
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
             st.markdown(f"""<div class='card' style='text-align: center; padding: 30px; border: 3px solid {score_color};'>
                 <h3 style='color: {text}; margin-bottom: 10px;'>Contract Health Score</h3>
                 <div style='font-size: 72px; font-weight: 800; color: {score_color}; margin: 20px 0;'>{st.session_state.overall_score}/100</div>
                 <div style='font-size: 20px; color: {score_color}; font-weight: 600;'>{st.session_state.risk_category}</div>
             </div>""", unsafe_allow_html=True)
-        
-        with col2:
-            st.markdown(f"""<div class='card' style='padding: 30px; border-left: 4px solid {verdict_color};'>
-                <h3 style='color: {accent}; margin-bottom: 15px;'>AI Recommendation</h3>
-                <div style='font-size: 32px; font-weight: 700; color: {verdict_color}; margin: 15px 0;'>{exec_sum['recommendation']}</div>
-                <p style='color: {text}; margin-top: 10px;'><strong>Risk Level:</strong> {exec_sum['overall_risk']}</p>
-                <p style='color: {text};'><strong>High Risk:</strong> {exec_sum['high_risk_count']} clauses</p>
-                <p style='color: {text};'><strong>Medium Risk:</strong> {exec_sum['medium_risk_count']} clauses</p>
-            </div>""", unsafe_allow_html=True)
     
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # Show executive summary text
-    if st.session_state.executive_summary:
+    # AI-Generated Executive Summary
+    if st.session_state.summary_data:
         st.markdown(f"""<div class='card'>
-            <h3 style='color: {accent}; margin-bottom: 15px;'>Executive Summary</h3>
-            <p style='color: {text}; line-height: 1.8; font-size: 15px;'>{st.session_state.executive_summary['summary']}</p>
+            <h3 style='color: {accent}; margin-bottom: 20px;'>🤖 AI-Generated Executive Summary</h3>
+            <div style='background: {bg}; padding: 20px; border-radius: 12px; border-left: 4px solid {accent};'>
+                <p style='color: {text}; line-height: 1.8; font-size: 15px;'>{st.session_state.summary_data.get('executive_summary', 'No summary available')}</p>
+            </div>
+            <hr style='border-color: {border}; margin: 20px 0;'>
+            <p style='color: {text};'><strong>Overall Risk Assessment:</strong> <span style='color: {warning}; font-weight: 600;'>{st.session_state.summary_data.get('overall_risk_score', 'N/A')}</span></p>
+            <p style='color: {text};'><strong>Recommendation:</strong> <span style='font-weight: 600;'>{st.session_state.summary_data.get('recommendation', 'N/A')}</span></p>
         </div>""", unsafe_allow_html=True)
     
     st.markdown(f"""<div class='card'>
-        <h3 style='color: {accent}; margin-bottom: 20px;'>Analysis Results</h3>
+        <h3 style='color: {accent}; margin-bottom: 20px;'>📊 Analysis Results</h3>
         <div style='color: {text}; line-height: 2;'>
             <p><strong>High Risk Clauses:</strong> <span style='color: {danger}; font-weight: 700;'>{high}</span></p>
             <p><strong>Medium Risk Clauses:</strong> <span style='color: {warning}; font-weight: 700;'>{medium}</span></p>
@@ -790,40 +804,46 @@ elif page == "Summary" and st.session_state.analysis:
         </div>
     </div>""", unsafe_allow_html=True)
     
-    st.markdown(f"<h3 style='color: {accent}; margin-top: 30px;'>Download Reports</h3>", unsafe_allow_html=True)
+    st.markdown(f"<h3 style='color: {accent}; margin-top: 30px;'>📥 Download Reports</h3>", unsafe_allow_html=True)
     
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
     with col1:
         txt_data = generate_summary_text()
         st.download_button(
-            "Download Markdown Report",
+            "📄 Download TXT Report",
             txt_data,
-            file_name=f"contract_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
-            mime="text/markdown",
+            file_name=f"contract_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+            mime="text/plain",
+            use_container_width=True
+        )
+        
+        json_data = generate_json_report()
+        st.download_button(
+            "📊 Download JSON Report",
+            json_data,
+            file_name=f"contract_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+            mime="application/json",
             use_container_width=True
         )
     
     with col2:
         csv_data = generate_csv_report()
         st.download_button(
-            "Download CSV Report",
+            "📊 Download CSV Report",
             csv_data,
             file_name=f"contract_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
             mime="text/csv",
             use_container_width=True
         )
-    
-    with col3:
-        if st.session_state.full_report:
-            report_gen = ReportGenerator()
-            json_data = report_gen.export_to_json(st.session_state.full_report)
-            st.download_button(
-                "Download JSON Report",
-                json_data,
-                file_name=f"contract_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
-                mime="application/json",
-                use_container_width=True
-            )
+        
+        md_data = generate_markdown_report()
+        st.download_button(
+            "📝 Download Markdown Report",
+            md_data,
+            file_name=f"contract_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
+            mime="text/markdown",
+            use_container_width=True
+        )
     
     st.markdown("<br>", unsafe_allow_html=True)
     fig = go.Figure(data=[go.Bar(
@@ -854,18 +874,19 @@ elif page == "History":
         st.dataframe(df_history, use_container_width=True, height=400)
         
         st.markdown(f"""<div class='card'>
-            <h4 style='color: {accent};'>History Statistics</h4>
+            <h4 style='color: {accent};'>📈 History Statistics</h4>
             <p style='color: {text};'><strong>Total Analyses:</strong> {len(st.session_state.history)}</p>
             <p style='color: {text};'><strong>Total Clauses Processed:</strong> {sum(h['Clauses'] for h in st.session_state.history)}</p>
             <p style='color: {text};'><strong>Total High Risk Found:</strong> {sum(h['High Risk'] for h in st.session_state.history)}</p>
             <p style='color: {text};'><strong>Average Risk Score:</strong> {sum(h.get('Overall Score', 0) for h in st.session_state.history) / len(st.session_state.history):.1f}/100</p>
         </div>""", unsafe_allow_html=True)
     else:
-        st.info("No analysis history available yet. Upload and analyze a contract to get started.")
+        st.info("📭 No analysis history available yet. Upload and analyze a contract to get started.")
 
 else:
     welcome_card = f"""<div class='card' style='text-align: center; padding: 60px;'>
-        <h3 style='color: {accent};'>Welcome to Contract Intelligence</h3>
+        <div style='font-size: 64px; margin-bottom: 20px;'>⚖️</div>
+        <h3 style='color: {accent};'>Welcome to ContractShield AI</h3>
         <p style='color: {text_sec}; font-size: 16px; margin-top: 20px;'>
             Please upload a contract document to begin your analysis journey.
         </p>
