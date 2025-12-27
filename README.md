@@ -1,5 +1,5 @@
 '''
-# 💼 Contract Analysis & Risk Assessment Bot
+# 💼 NYAYA SAHAYAK -Contract Analysis & Risk Assessment Bot
 
 This project analyzes legal contracts to identify risks, summarize key clauses, and provide compliance insights with Indian labor and commercial laws.  
 It uses **GPT-4-based AI agents** for clause-level analysis, executive summarization, and risk scoring, and provides an interactive **Streamlit dashboard** for visualization and report generation.
@@ -82,5 +82,4 @@ Supported formats: PDF, DOCX, TXT
 
 View clause analysis, risks, and safer alternatives
 
-Export JSON or Markdown reports for record-keeping
 
