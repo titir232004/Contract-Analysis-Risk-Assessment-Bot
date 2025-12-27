@@ -66,7 +66,7 @@ NYAYA_SAHAYAK_CONTRACT_ANALYSIS
 
 ### 1️⃣ Clone the repository
 ```bash
-git clone https://github.com/your-username/NYAYA_SAHAYAK_CONTRACT_ANALYSIS.git
+git clone https://github.com/titir232004/NYAYA_SAHAYAK_CONTRACT_ANALYSIS.git
 cd NYAYA_SAHAYAK_CONTRACT_ANALYSIS
 2️⃣ Install dependencies
 pip install -r requirements.txt
