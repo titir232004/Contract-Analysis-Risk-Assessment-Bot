@@ -9,6 +9,7 @@ It uses **GPT-4-based AI agents** for clause-level analysis, executive summariza
 ## 📁 Project Structure
 
 NYAYA_SAHAYAK_CONTRACT_ANALYSIS
+```
 ├── app.py # Streamlit app for contract upload, clause analysis, and visualization
 ├── preprocessing/
 │ ├── file_loader.py # Extracts text from PDF, DOCX, TXT
@@ -20,7 +21,7 @@ NYAYA_SAHAYAK_CONTRACT_ANALYSIS
 ├── report_generator.py # Formats analysis into JSON and Markdown reports
 ├── requirements.txt # Python dependencies
 └── README.md # Project documentation
-
+```
 markdown
 Copy code
 
@@ -54,7 +55,7 @@ Copy code
 ## 🧩 Tech Stack
 
 - **Python**  
-- **OpenAI GPT-5 models** – Clause explanations & summarization  
+- **OpenAI GPT-4 models** – Clause explanations & summarization  
 - **Streamlit** – Interactive UI and dashboard  
 - **Pandas, NumPy** – Data handling and aggregation  
 - **Regex & NLP preprocessing** – Clause splitting and text cleaning  
