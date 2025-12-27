@@ -1,4 +1,3 @@
-'''
 # 💼 NYAYA SAHAYAK -Contract Analysis & Risk Assessment Bot
 
 This project analyzes legal contracts to identify risks, summarize key clauses, and provide compliance insights with Indian labor and commercial laws.  
@@ -17,8 +16,8 @@ NYAYA_SAHAYAK_CONTRACT_ANALYSIS
 │ └── cleaning.py # Cleans and normalizes contract text
 ├── analysis/
 │ ├── clause_explainer.py # AI agent to explain clauses and detect risks
+│ │── report_generator.py # Formats analysis into JSON and Markdown 
 │ └── summarizer_agent.py # Summarizes contract and calculates risk score
-├── report_generator.py # Formats analysis into JSON and Markdown reports
 ├── requirements.txt # Python dependencies
 └── README.md # Project documentation
 ```
