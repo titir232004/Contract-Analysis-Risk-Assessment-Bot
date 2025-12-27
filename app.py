@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -11,23 +10,28 @@ from io import BytesIO
 from preprocessing import preprocess_contract
 from clause_explainer import explain_clause_gpt
 from risk_scorer import RiskScorer
+from summarizer_agent import summarize_contract
+from report_generator import ReportGenerator
 
 # ================= PAGE CONFIG =================
 st.set_page_config(page_title="ContractShield AI", layout="wide", page_icon="⚖️")
 
 # ================= SESSION STATE =================
-for key, default in [("clauses", None), ("analysis", None), ("history", []), ("theme", "light"), ("chat", []), ("chat_open", False), ("overall_score", None)]:
+for key, default in [("clauses", None), ("analysis", None), ("history", []), ("theme", "light"), 
+                     ("chat", []), ("chat_open", False), ("overall_score", None), 
+                     ("executive_summary", None), ("full_report", None), ("uploaded_filename", None)]:
     if key not in st.session_state:
         st.session_state[key] = default
 
 # ================= HELPER FUNCTIONS =================
-def analyze_contract_with_gpt(clauses):
-    """Analyze contract using GPT-based clause explainer"""
+def analyze_contract_with_gpt(clauses, filename="contract.pdf"):
+    """Analyze contract using GPT-based clause explainer + summarizer"""
     results = []
     all_risks = []
+    analyzed_clauses_for_summary = []
     
     for idx, clause in enumerate(clauses):
-        # Get GPT analysis
+        # Get GPT analysis for each clause
         gpt_result = explain_clause_gpt(clause['text'])
         
         # Map risk level to scoring weight
@@ -42,15 +46,22 @@ def analyze_contract_with_gpt(clauses):
             'weight': weight
         })
         
+        # Store for summarizer
+        analyzed_clauses_for_summary.append(gpt_result)
+        
         # Format result for display
         result = {
             'clause_id': idx + 1,
+            'title': f"Clause {idx + 1}",
             'text': clause['text'],
+            'content': clause['text'],
             'risk_level': risk_level,
             'explanation': gpt_result.get('plain_language', 'No explanation available'),
             'key_points': gpt_result.get('key_points', []),
             'risks': '\n'.join(gpt_result.get('risks_detected', ['No risks detected'])),
-            'suggested_alternative': gpt_result.get('safer_alternative', 'No alternative suggested')
+            'risks_detected': gpt_result.get('risks_detected', []),
+            'suggested_alternative': gpt_result.get('safer_alternative', 'No alternative suggested'),
+            'ai_data': gpt_result  # Store full GPT result for report generation
         }
         results.append(result)
     
@@ -59,9 +70,55 @@ def analyze_contract_with_gpt(clauses):
     overall_score = scorer.calculate_score(all_risks)
     risk_category = scorer.get_risk_level(overall_score)
     
-    return results, overall_score, risk_category
+    # Generate executive summary using summarizer agent
+    summary_result = summarize_contract(analyzed_clauses_for_summary)
+    
+    # Create comprehensive report using report generator
+    report_gen = ReportGenerator()
+    
+    # Prepare summary data for report
+    summary_data = {
+        "executive_summary": summary_result.get('executive_summary', 'Analysis complete'),
+        "final_verdict": summary_result.get('recommendation', 'Review Required'),
+        "compliance_check": f"Overall Risk: {summary_result.get('overall_risk_score', 'Unknown')}",
+        "key_obligations": _extract_key_obligations(results),
+        "safety_score": overall_score
+    }
+    
+    # Generate full report
+    full_report = report_gen.generate_analysis_report(
+        filename=filename,
+        summary_data=summary_data,
+        clauses=results,
+        entities=[]  # You can add entity extraction here if needed
+    )
+    
+    executive_summary = {
+        'summary': summary_result.get('executive_summary', ''),
+        'overall_risk': summary_result.get('overall_risk_score', 'Unknown'),
+        'recommendation': summary_result.get('recommendation', 'Review Required'),
+        'high_risk_count': sum(1 for r in results if r['risk_level'] == 'High'),
+        'medium_risk_count': sum(1 for r in results if r['risk_level'] == 'Medium')
+    }
+    
+    return results, overall_score, risk_category, executive_summary, full_report
+
+def _extract_key_obligations(results):
+    """Extract key obligations from analyzed clauses"""
+    obligations = []
+    for r in results:
+        if r['risk_level'] in ['High', 'Medium']:
+            key_points = r.get('key_points', [])
+            if key_points:
+                obligations.extend(key_points[:2])  # Take top 2 points from risky clauses
+    return obligations[:5]  # Return top 5 obligations
 def generate_summary_text():
-    """Generate text summary for download"""
+    """Generate text summary for download using ReportGenerator"""
+    if st.session_state.full_report:
+        report_gen = ReportGenerator()
+        return report_gen.export_to_markdown(st.session_state.full_report)
+    
+    # Fallback to simple format if report not available
     high = sum(1 for r in st.session_state.analysis if r["risk_level"] == "High")
     medium = sum(1 for r in st.session_state.analysis if r["risk_level"] == "Medium")
     low = sum(1 for r in st.session_state.analysis if r["risk_level"] == "Low")
@@ -462,6 +519,8 @@ elif page == "Upload":
     uploaded_file = st.file_uploader("Choose a file", type=["pdf", "docx", "txt"], help="Supported formats: PDF, DOCX, TXT")
     
     if uploaded_file:
+        st.session_state.uploaded_filename = uploaded_file.name
+        
         with st.spinner("Extracting clauses from your document..."):
             progress = st.progress(0)
             for i in range(100):
@@ -525,8 +584,12 @@ elif page == "Risk Analysis" and st.session_state.clauses:
         with st.spinner("Analyzing contract clauses with AI..."):
             progress = st.progress(0)
             
-            # Analyze with GPT
-            results, overall_score, risk_category = analyze_contract_with_gpt(st.session_state.clauses)
+            # Analyze with GPT + Summarizer + Report Generator
+            filename = st.session_state.uploaded_filename or "contract.pdf"
+            results, overall_score, risk_category, executive_summary, full_report = analyze_contract_with_gpt(
+                st.session_state.clauses, 
+                filename
+            )
             
             # Update progress
             for i in range(100):
@@ -536,17 +599,34 @@ elif page == "Risk Analysis" and st.session_state.clauses:
             st.session_state.analysis = results
             st.session_state.overall_score = overall_score
             st.session_state.risk_category = risk_category
+            st.session_state.executive_summary = executive_summary
+            st.session_state.full_report = full_report
             
             st.session_state.history.append({
                 "Time": datetime.now().strftime("%d %b %Y %H:%M"),
                 "Clauses": len(st.session_state.analysis),
-                "High Risk": sum(1 for r in st.session_state.analysis if r["risk_level"] == "High"),
-                "Overall Score": overall_score
+                "High Risk": executive_summary['high_risk_count'],
+                "Overall Score": overall_score,
+                "Recommendation": executive_summary['recommendation']
             })
             progress.empty()
         
         show_success_animation()
         st.success("Analysis completed successfully")
+        
+        # Display Executive Summary from Summarizer Agent
+        if st.session_state.executive_summary:
+            exec_sum = st.session_state.executive_summary
+            verdict_color = danger if exec_sum['recommendation'] == 'Reject' else (warning if exec_sum['recommendation'] == 'Negotiate' else success)
+            
+            st.markdown(f"""<div class='card' style='border-left: 4px solid {verdict_color};'>
+                <h3 style='color: {accent}; margin-bottom: 15px;'>Executive Summary</h3>
+                <p style='color: {text}; line-height: 1.8; font-size: 15px;'>{exec_sum['summary']}</p>
+                <div style='margin-top: 20px; padding-top: 15px; border-top: 1px solid {border};'>
+                    <p style='color: {text};'><strong>Overall Risk Assessment:</strong> <span style='color: {verdict_color}; font-weight: 600;'>{exec_sum['overall_risk']}</span></p>
+                    <p style='color: {text};'><strong>Recommendation:</strong> <span style='color: {verdict_color}; font-weight: 600;'>{exec_sum['recommendation']}</span></p>
+                </div>
+            </div>""", unsafe_allow_html=True)
         
         # Display overall score prominently
         col1, col2, col3 = st.columns([1, 2, 1])
@@ -666,18 +746,37 @@ elif page == "Summary" and st.session_state.analysis:
     medium = sum(1 for r in st.session_state.analysis if r["risk_level"] == "Medium")
     low = sum(1 for r in st.session_state.analysis if r["risk_level"] == "Low")
     
-    # Overall score display
-    if st.session_state.overall_score:
+    # Overall score display with executive summary
+    if st.session_state.overall_score and st.session_state.executive_summary:
+        exec_sum = st.session_state.executive_summary
         score_color = success if st.session_state.overall_score >= 85 else (warning if st.session_state.overall_score >= 60 else danger)
-        col1, col2, col3 = st.columns([1, 2, 1])
-        with col2:
+        verdict_color = danger if exec_sum['recommendation'] == 'Reject' else (warning if exec_sum['recommendation'] == 'Negotiate' else success)
+        
+        col1, col2 = st.columns([1, 1])
+        with col1:
             st.markdown(f"""<div class='card' style='text-align: center; padding: 30px; border: 3px solid {score_color};'>
                 <h3 style='color: {text}; margin-bottom: 10px;'>Contract Health Score</h3>
                 <div style='font-size: 72px; font-weight: 800; color: {score_color}; margin: 20px 0;'>{st.session_state.overall_score}/100</div>
                 <div style='font-size: 20px; color: {score_color}; font-weight: 600;'>{st.session_state.risk_category}</div>
             </div>""", unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown(f"""<div class='card' style='padding: 30px; border-left: 4px solid {verdict_color};'>
+                <h3 style='color: {accent}; margin-bottom: 15px;'>AI Recommendation</h3>
+                <div style='font-size: 32px; font-weight: 700; color: {verdict_color}; margin: 15px 0;'>{exec_sum['recommendation']}</div>
+                <p style='color: {text}; margin-top: 10px;'><strong>Risk Level:</strong> {exec_sum['overall_risk']}</p>
+                <p style='color: {text};'><strong>High Risk:</strong> {exec_sum['high_risk_count']} clauses</p>
+                <p style='color: {text};'><strong>Medium Risk:</strong> {exec_sum['medium_risk_count']} clauses</p>
+            </div>""", unsafe_allow_html=True)
     
     st.markdown("<br>", unsafe_allow_html=True)
+    
+    # Show executive summary text
+    if st.session_state.executive_summary:
+        st.markdown(f"""<div class='card'>
+            <h3 style='color: {accent}; margin-bottom: 15px;'>Executive Summary</h3>
+            <p style='color: {text}; line-height: 1.8; font-size: 15px;'>{st.session_state.executive_summary['summary']}</p>
+        </div>""", unsafe_allow_html=True)
     
     st.markdown(f"""<div class='card'>
         <h3 style='color: {accent}; margin-bottom: 20px;'>Analysis Results</h3>
@@ -693,14 +792,14 @@ elif page == "Summary" and st.session_state.analysis:
     
     st.markdown(f"<h3 style='color: {accent}; margin-top: 30px;'>Download Reports</h3>", unsafe_allow_html=True)
     
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     with col1:
         txt_data = generate_summary_text()
         st.download_button(
-            "Download TXT Report",
+            "Download Markdown Report",
             txt_data,
-            file_name=f"contract_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
-            mime="text/plain",
+            file_name=f"contract_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
+            mime="text/markdown",
             use_container_width=True
         )
     
@@ -713,6 +812,18 @@ elif page == "Summary" and st.session_state.analysis:
             mime="text/csv",
             use_container_width=True
         )
+    
+    with col3:
+        if st.session_state.full_report:
+            report_gen = ReportGenerator()
+            json_data = report_gen.export_to_json(st.session_state.full_report)
+            st.download_button(
+                "Download JSON Report",
+                json_data,
+                file_name=f"contract_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                mime="application/json",
+                use_container_width=True
+            )
     
     st.markdown("<br>", unsafe_allow_html=True)
     fig = go.Figure(data=[go.Bar(
