@@ -76,8 +76,13 @@ html, body, [class*="css"], .stApp {{
     font-weight: 600 !important; 
 }}
 
-.stRadio label, .stDataFrame, p, span, div {{ 
+.stRadio label, .stDataFrame, p, span, div, h1, h2, h3, h4, h5, h6 {{ 
     color: {text} !important; 
+}}
+
+/* Fix for markdown text */
+.stMarkdown, .stMarkdown p, .stMarkdown span, .stMarkdown div {{
+    color: {text} !important;
 }}
 
 /* Animations */
@@ -99,6 +104,11 @@ html, body, [class*="css"], .stApp {{
 @keyframes circle {{
     0% {{ stroke-dashoffset: 166; }}
     100% {{ stroke-dashoffset: 0; }}
+}}
+
+@keyframes shimmer {{
+    0% {{ background-position: -1000px 0; }}
+    100% {{ background-position: 1000px 0; }}
 }}
 
 .fade-in {{ 
@@ -141,6 +151,7 @@ html, body, [class*="css"], .stApp {{
     background: linear-gradient(135deg, {accent}, {success});
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
+    background-clip: text;
     margin-bottom: 16px;
 }}
 
@@ -191,9 +202,13 @@ html, body, [class*="css"], .stApp {{
 /* Expanders */
 .streamlit-expanderHeader {{ 
     background-color: {card} !important; 
-    color: {text} !important; 
+    color: {text} !important;
     border: 1px solid {border} !important; 
     border-radius: 8px !important;
+}}
+
+.streamlit-expanderHeader:hover {{
+    background-color: {card} !important;
 }}
 
 /* Scrollbar */
@@ -206,12 +221,25 @@ html, body, [class*="css"], .stApp {{
     border-radius: 10px; 
 }}
 
-/* Success Animation */
-.success-animation {{
-    display: flex;
-    justify-content: center;
-    align-items: center;
+/* Success shimmer effect */
+.success-shimmer {{
+    background: linear-gradient(90deg, {success} 0%, {accent} 50%, {success} 100%);
+    background-size: 1000px 100%;
+    animation: shimmer 2s infinite;
     padding: 20px;
+    border-radius: 12px;
+    text-align: center;
+    color: white !important;
+    font-weight: 600;
+    font-size: 18px;
+    margin: 20px 0;
+}}
+
+/* Info alerts */
+.stAlert {{
+    background-color: {card} !important;
+    color: {text} !important;
+    border: 1px solid {border} !important;
 }}
 </style>
 """, unsafe_allow_html=True)
@@ -220,11 +248,11 @@ html, body, [class*="css"], .stApp {{
 # ================= HEADER WITH THEME TOGGLE =================
 col1, col2 = st.columns([11, 1])
 with col1:
-    st.markdown(f"<div class='title fade-in'>⚖️ NyayaSahayak</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='title fade-in'>NyayaSahayak</div>", unsafe_allow_html=True)
     st.markdown(f"<div class='subtitle'>AI-Powered Indian Contract Risk Analyzer</div>", unsafe_allow_html=True)
 
 with col2:
-    if st.button("🌙" if st.session_state.theme == "light" else "☀️", help="Toggle Theme"):
+    if st.button("🌙" if st.session_state.theme == "light" else "☀️", help="Toggle Theme", key="theme_toggle"):
         st.session_state.theme = "light" if st.session_state.theme == "dark" else "dark"
         st.rerun()
 
@@ -233,10 +261,10 @@ st.markdown("---")
 
 # ================= SIDEBAR CHAT ASSISTANT =================
 with st.sidebar:
-    st.markdown(f"<h2 style='text-align: center; color: {text};'>📚 Help Center</h2>", unsafe_allow_html=True)
+    st.markdown(f"<h2 style='text-align: center; color: {text};'>Help Center</h2>", unsafe_allow_html=True)
     st.markdown("---")
     
-    if st.button("💬 Chat Assistant" if not st.session_state.chat_open else "❌ Close Chat", use_container_width=True):
+    if st.button("Chat Assistant" if not st.session_state.chat_open else "Close Chat", use_container_width=True):
         st.session_state.chat_open = not st.session_state.chat_open
         st.rerun()
     
@@ -268,14 +296,14 @@ with st.sidebar:
         
         col1, col2 = st.columns(2)
         with col1:
-            if st.button("📄 Formats", key="q1", use_container_width=True):
+            if st.button("Formats", key="q1", use_container_width=True):
                 st.session_state.chat.append(("user", "What formats?"))
                 st.session_state.chat.append(("bot", "I support PDF, DOCX, and TXT formats for contract analysis!"))
                 st.rerun()
         with col2:
-            if st.button("⚠️ Risks", key="q2", use_container_width=True):
+            if st.button("Risks", key="q2", use_container_width=True):
                 st.session_state.chat.append(("user", "What are risk levels?"))
-                st.session_state.chat.append(("bot", "🔴 High = Critical issues\n🟡 Medium = Notable concerns\n🟢 Low = Minor issues"))
+                st.session_state.chat.append(("bot", "High = Critical issues, Medium = Notable concerns, Low = Minor issues"))
                 st.rerun()
         
         user_input = st.text_input("Ask me anything...", key="chat_input", label_visibility="collapsed")
@@ -288,7 +316,7 @@ with st.sidebar:
                 if "format" in user_input.lower() or "file" in user_input.lower():
                     reply = "I support PDF, DOCX, and TXT file formats for contract analysis. Just upload and I'll handle the rest!"
                 elif "risk" in user_input.lower():
-                    reply = "Risk levels: 🔴 High (critical issues), 🟡 Medium (concerns to address), 🟢 Low (minor/standard terms)"
+                    reply = "Risk levels: High (critical issues), Medium (concerns to address), Low (minor/standard terms)"
                 elif "how" in user_input.lower() or "use" in user_input.lower():
                     reply = "Simple! 1) Upload contract 2) Click 'Start Analysis' 3) Review results 4) Download report"
                 else:
@@ -305,19 +333,18 @@ with st.sidebar:
 # ================= MAIN CONTENT =================
 
 # Feature Cards Section
-st.markdown(f"<h3 style='color: {accent}; margin-bottom: 20px;'>✨ Key Features</h3>", unsafe_allow_html=True)
+st.markdown(f"<h3 style='color: {accent}; margin-bottom: 20px;'>Key Features</h3>", unsafe_allow_html=True)
 
 cols = st.columns(3)
 features = [
-    ("🤖", "AI-Powered Analysis", "GPT-based clause interpretation"),
-    ("⚖️", "Legal Compliance", "Indian employment law checks"),
-    ("📊", "Risk Scoring", "Comprehensive risk assessment")
+    ("AI-Powered Analysis", "GPT-based clause interpretation"),
+    ("Legal Compliance", "Indian employment law checks"),
+    ("Risk Scoring", "Comprehensive risk assessment")
 ]
 
-for col, (icon, title, desc) in zip(cols, features):
+for col, (title, desc) in zip(cols, features):
     with col:
         st.markdown(f"""<div class='feature-card fade-in'>
-            <div style='font-size: 48px;'>{icon}</div>
             <div style='font-size: 18px; font-weight: 700; color: {text}; margin-top: 10px;'>{title}</div>
             <div style='font-size: 13px; color: {text_sec}; margin-top: 8px;'>{desc}</div>
         </div>""", unsafe_allow_html=True)
@@ -327,7 +354,7 @@ st.markdown("<br>", unsafe_allow_html=True)
 
 # ---------- FILE UPLOAD (FUNCTIONALITY UNCHANGED) ----------
 st.markdown(f"""<div class='card'>
-    <h3 style='color: {accent}; margin-bottom: 15px;'>📤 Upload Contract Document</h3>
+    <h3 style='color: {accent}; margin-bottom: 15px;'>Upload Contract Document</h3>
 </div>""", unsafe_allow_html=True)
 
 uploaded_file = st.file_uploader(
@@ -350,14 +377,14 @@ if uploaded_file:
     </div>
     """, unsafe_allow_html=True)
     
-    st.success(f"✅ Uploaded: **{uploaded_file.name}**")
+    st.success(f"Uploaded: {uploaded_file.name}")
 
     # ---------- PREPROCESSING (FUNCTIONALITY UNCHANGED) ----------
-    with st.spinner("📄 Extracting & cleaning text..."):
+    with st.spinner("Extracting & cleaning text..."):
         raw_text = extract_text(uploaded_file)
         cleaned_text = clean_text(raw_text)
 
-    with st.spinner("🔍 Splitting into clauses..."):
+    with st.spinner("Splitting into clauses..."):
         clauses = split_into_clauses(cleaned_text)
 
     # Display clause count in a nice card
@@ -367,7 +394,7 @@ if uploaded_file:
     </div>""", unsafe_allow_html=True)
 
     # ---------- START ANALYSIS BUTTON (FUNCTIONALITY UNCHANGED) ----------
-    if st.button("🚀 Start Legal Analysis", type="primary", use_container_width=True):
+    if st.button("Start Legal Analysis", type="primary", use_container_width=True):
         st.session_state.clauses = clauses
         st.session_state.analysis_done = False
         st.session_state.report = None
@@ -375,7 +402,7 @@ if uploaded_file:
         progress = st.progress(0)
         analyzed_clauses = []
 
-        st.markdown(f"<h3 style='color: {accent};'>⏳ Analyzing Clauses...</h3>", unsafe_allow_html=True)
+        st.markdown(f"<h3 style='color: {accent};'>Analyzing Clauses...</h3>", unsafe_allow_html=True)
 
         # Analysis loop (UNCHANGED)
         for idx, clause in enumerate(clauses):
@@ -389,10 +416,10 @@ if uploaded_file:
             })
 
             progress.progress((idx + 1) / len(clauses))
-            time.sleep(0.1)  # Smooth animation
+            time.sleep(0.1)
 
         # ---------- SUMMARY (FUNCTIONALITY UNCHANGED) ----------
-        with st.spinner("🧠 Generating executive summary..."):
+        with st.spinner("Generating executive summary..."):
             flat_ai = [c["ai_data"] for c in analyzed_clauses]
             summary = summarize_contract(flat_ai)
 
@@ -414,21 +441,13 @@ if uploaded_file:
         st.session_state.report = report
         st.session_state.analysis_done = True
         
-        # Success animation
-        st.markdown("""
-        <div class='success-animation'>
-            <svg width='80' height='80' viewBox='0 0 52 52'>
-                <circle cx='26' cy='26' r='25' fill='none' stroke='#22c55e' stroke-width='2'
-                        style='stroke-dasharray: 166; stroke-dashoffset: 166; animation: circle 0.6s ease-out forwards;'/>
-                <path fill='none' stroke='#22c55e' stroke-width='3' stroke-linecap='round'
-                      d='M14 27l7.5 7.5L38 18'
-                      style='stroke-dasharray: 100; stroke-dashoffset: 100; animation: checkmark 0.4s 0.4s ease-out forwards;'/>
-            </svg>
-        </div>
-        """, unsafe_allow_html=True)
+        # Professional success notification (NO BALLOONS)
+        st.markdown(f"""<div class='success-shimmer'>
+            Analysis Completed Successfully
+        </div>""", unsafe_allow_html=True)
         
-        st.success("✅ Analysis completed successfully!")
-        st.balloons()
+        time.sleep(1)
+        st.rerun()
 
 
 # ---------- RESULTS DISPLAY (FUNCTIONALITY UNCHANGED, UI ENHANCED) ----------
@@ -436,7 +455,7 @@ if st.session_state.analysis_done and st.session_state.report:
     report = st.session_state.report
 
     st.markdown("---")
-    st.markdown(f"<h2 style='color: {accent}; margin-top: 30px;'>📊 Executive Summary</h2>", unsafe_allow_html=True)
+    st.markdown(f"<h2 style='color: {accent}; margin-top: 30px;'>Executive Summary</h2>", unsafe_allow_html=True)
 
     exec_sum = report["executive_summary"]
     stats = report["risk_stats"]
@@ -445,7 +464,7 @@ if st.session_state.analysis_done and st.session_state.report:
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        verdict_color = success if "sign" in exec_sum["final_verdict"].lower() else (warning if "negotiate" in exec_sum["final_verdict"].lower() else danger)
+        verdict_color = success if "sign" in str(exec_sum["final_verdict"]).lower() else (warning if "negotiate" in str(exec_sum["final_verdict"]).lower() else danger)
         st.markdown(f"""<div class='card' style='text-align: center; border-left: 4px solid {verdict_color};'>
             <div style='color: {text_sec}; font-size: 14px; margin-bottom: 8px;'>Final Verdict</div>
             <div style='font-size: 24px; font-weight: 700; color: {verdict_color};'>{exec_sum["final_verdict"]}</div>
@@ -466,93 +485,102 @@ if st.session_state.analysis_done and st.session_state.report:
 
     # Strategic Overview
     st.markdown(f"""<div class='card'>
-        <h4 style='color: {accent}; margin-bottom: 15px;'>📋 Strategic Overview</h4>
+        <h4 style='color: {accent}; margin-bottom: 15px;'>Strategic Overview</h4>
         <p style='color: {text}; line-height: 1.8;'>{exec_sum["strategic_overview"]}</p>
     </div>""", unsafe_allow_html=True)
 
     # Risk Distribution Chart
-    st.markdown(f"<h3 style='color: {accent}; margin-top: 30px;'>📈 Risk Distribution</h3>", unsafe_allow_html=True)
+    st.markdown(f"<h3 style='color: {accent}; margin-top: 30px;'>Risk Distribution</h3>", unsafe_allow_html=True)
     
-    # Count risk levels
-    high_count = sum(1 for c in report["detailed_clause_analysis"] if c["ai_analysis"]["risk_level"] == "High")
-    medium_count = sum(1 for c in report["detailed_clause_analysis"] if c["ai_analysis"]["risk_level"] == "Medium")
-    low_count = sum(1 for c in report["detailed_clause_analysis"] if c["ai_analysis"]["risk_level"] == "Low")
+    # Count risk levels from the report
+    high_count = 0
+    medium_count = 0
+    low_count = 0
     
-    col1, col2 = st.columns(2)
+    for clause in report["detailed_clause_analysis"]:
+        risk_level = clause["ai_analysis"]["risk_level"]
+        if risk_level == "High":
+            high_count += 1
+        elif risk_level == "Medium":
+            medium_count += 1
+        elif risk_level == "Low":
+            low_count += 1
     
-    with col1:
-        fig = go.Figure(data=[go.Pie(
-            labels=['High Risk', 'Medium Risk', 'Low Risk'],
-            values=[high_count, medium_count, low_count],
-            marker=dict(colors=[danger, warning, success]),
-            hole=0.4,
-            textinfo='label+percent',
-            textfont=dict(size=14, color=text)
-        )])
-        fig.update_layout(
-            title="Risk Level Distribution",
-            plot_bgcolor=card,
-            paper_bgcolor=card,
-            font_color=text,
-            showlegend=True,
-            height=400
-        )
-        st.plotly_chart(fig, use_container_width=True)
-    
-    with col2:
-        fig = go.Figure(data=[go.Bar(
-            x=['High', 'Medium', 'Low'],
-            y=[high_count, medium_count, low_count],
-            marker=dict(color=[danger, warning, success]),
-            text=[high_count, medium_count, low_count],
-            textposition='auto',
-            textfont=dict(size=16, color='white')
-        )])
-        fig.update_layout(
-            title="Risk Count Breakdown",
-            plot_bgcolor=card,
-            paper_bgcolor=card,
-            font_color=text,
-            xaxis_title="Risk Level",
-            yaxis_title="Number of Clauses",
-            height=400
-        )
-        st.plotly_chart(fig, use_container_width=True)
+    # Only show charts if there's data
+    if high_count + medium_count + low_count > 0:
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            fig = go.Figure(data=[go.Pie(
+                labels=['High Risk', 'Medium Risk', 'Low Risk'],
+                values=[high_count, medium_count, low_count],
+                marker=dict(colors=[danger, warning, success]),
+                hole=0.4,
+                textinfo='label+percent',
+                textfont=dict(size=14)
+            )])
+            fig.update_layout(
+                title="Risk Level Distribution",
+                plot_bgcolor=card,
+                paper_bgcolor=card,
+                showlegend=True,
+                height=400
+            )
+            st.plotly_chart(fig, use_container_width=True)
+        
+        with col2:
+            fig = go.Figure(data=[go.Bar(
+                x=['High', 'Medium', 'Low'],
+                y=[high_count, medium_count, low_count],
+                marker=dict(color=[danger, warning, success]),
+                text=[high_count, medium_count, low_count],
+                textposition='auto',
+                textfont=dict(size=16, color='white')
+            )])
+            fig.update_layout(
+                title="Risk Count Breakdown",
+                plot_bgcolor=card,
+                paper_bgcolor=card,
+                xaxis_title="Risk Level",
+                yaxis_title="Number of Clauses",
+                height=400
+            )
+            st.plotly_chart(fig, use_container_width=True)
 
     st.markdown("---")
-    st.markdown(f"<h2 style='color: {accent}; margin-top: 30px;'>📑 Clause-wise Risk Analysis</h2>", unsafe_allow_html=True)
+    st.markdown(f"<h2 style='color: {accent}; margin-top: 30px;'>Clause-wise Risk Analysis</h2>", unsafe_allow_html=True)
 
-    # Clause analysis (FUNCTIONALITY UNCHANGED)
+    # Clause analysis (FUNCTIONALITY UNCHANGED, NO RISK LEVEL IN TITLE)
     for clause in report["detailed_clause_analysis"]:
         analysis = clause["ai_analysis"]
         risk = analysis["risk_level"]
 
-        icon = "🔴" if risk == "High" else "🟡" if risk == "Medium" else "🟢"
         risk_color = danger if risk == "High" else (warning if risk == "Medium" else success)
 
-        with st.expander(f"{icon} {clause['clause_id']} – {risk} Risk"):
+        # REMOVED "- Risk Level" from expander title
+        with st.expander(f"{clause['clause_id']}"):
             st.markdown(f"<span style='background: {risk_color}; color: white; padding: 4px 12px; border-radius: 8px; font-size: 12px; font-weight: 600;'>{risk} Risk</span>", unsafe_allow_html=True)
             st.markdown("<br>", unsafe_allow_html=True)
             
-            st.markdown("**💡 Plain Language Explanation**")
+            st.markdown("**Plain Language Explanation**")
             st.write(analysis["plain_language"])
 
             if analysis["risks_detected"]:
-                st.markdown("**⚠️ Risks Detected**")
+                st.markdown("**Risks Detected**")
                 for r in analysis["risks_detected"]:
                     st.markdown(f"- {r}")
 
-                st.markdown("**✅ Safer Alternative**")
+                st.markdown("**Safer Alternative**")
                 st.info(analysis["safer_alternative"])
 
     st.markdown("---")
-    st.markdown(f"<h2 style='color: {accent}; margin-top: 30px;'>⬇️ Download Reports</h2>", unsafe_allow_html=True)
+    st.markdown(f"<h2 style='color: {accent}; margin-top: 30px;'>Download Reports</h2>", unsafe_allow_html=True)
 
     col1, col2 = st.columns(2)
 
     with col1:
         col1.download_button(
-            "📄 Download JSON Report",
+            "Download JSON Report",
             data=json.dumps(report, indent=4),
             file_name=f"legal_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
             mime="application/json",
@@ -562,7 +590,7 @@ if st.session_state.analysis_done and st.session_state.report:
     with col2:
         md_report = ReportGenerator().export_to_markdown(report)
         col2.download_button(
-            "📝 Download Markdown Report",
+            "Download Markdown Report",
             data=md_report,
             file_name=f"legal_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md",
             mime="text/markdown",
@@ -575,6 +603,6 @@ if st.session_state.analysis_done and st.session_state.report:
 # Footer
 st.markdown("---")
 st.markdown(f"""<div style='text-align: center; color: {text_sec}; padding: 20px;'>
-    <p>⚖️ <strong>NyayaSahayak</strong> - AI-Powered Legal Contract Analysis</p>
-    <p style='font-size: 12px;'>Built with ❤️ for Indian Legal Professionals</p>
+    <p><strong>NyayaSahayak</strong> - AI-Powered Legal Contract Analysis</p>
+    <p style='font-size: 12px;'>Built for Indian Legal Professionals</p>
 </div>""", unsafe_allow_html=True)
