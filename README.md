@@ -21,8 +21,7 @@ NYAYA_SAHAYAK_CONTRACT_ANALYSIS
 ├── requirements.txt # Python dependencies
 └── README.md # Project documentation
 ```
-markdown
-Copy code
+
 
 ---
 
